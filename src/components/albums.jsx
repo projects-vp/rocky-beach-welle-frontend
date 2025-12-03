@@ -73,14 +73,16 @@ function AlbumList({ searchValue, filterActive }) {
     }
 
     loadAll();
-  }, [consent]); 
+  }, [consent]);
 
   if (!consent) {
     return (
       <div className="hinweis-consent alert alert-info mt-4">
-        <p>Um die Spotify-Alben der Drei ??? anzuzeigen, benötige ich deine
-        Einwilligung zur Nutzung von Spotify (Cookies und Datenübertragung).</p>
-        <p>Bitte triff unten im Cookie-Hinweis deine Auswahl.</p>  
+        <p>
+          Um die Spotify-Alben der Drei ??? anzuzeigen, benötige ich deine
+          Einwilligung zur Nutzung von Spotify (Cookies und Datenübertragung).
+        </p>
+        <p>Bitte triff unten im Cookie-Hinweis deine Auswahl.</p>
       </div>
     );
   }
