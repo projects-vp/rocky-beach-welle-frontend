@@ -1,0 +1,27 @@
+# Node.js / React Standard
+node_modules/
+build/
+dist/
+
+# Umgebungsvariablen (niemals ins Repo!)
+.env
+.env.*
+!.env.example
+
+# Test Coverage
+coverage/
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Editor / IDE
+.vscode/
+.idea/
+*.swp
+
+# System-Dateien
+.DS_Store
+Thumbs.db
