@@ -112,6 +112,7 @@ function AlbumList({ searchValue, filterActive }) {
       album.name?.toLowerCase().includes("das verfluchte schloss") ||
       album.name?.toLowerCase().includes("das geheimnis der geisterinsel") ||
       album.name?.toLowerCase().includes("hörspiel");
+      album.name?.toLowerCase().includes("das dorf der teufel");
     const tooManyTracks = album.total_tracks > 50;
     return matchSearch && !exclude && !tooManyTracks;
   });
