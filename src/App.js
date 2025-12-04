@@ -12,6 +12,8 @@ import Footer from "./components/footer";
 function HomeLayout() {
   const [searchValue, setSearchValue] = useState("");
   const [filterActive, setFilterActive] = useState(false);
+  const [showRandom, setShowRandom] = useState(false);
+  const [refreshRandom, setRefreshRandom] = useState(0); // Trigger für neue Zufallsfolge
 
   useEffect(() => {
     const tooltipTriggerList = document.querySelectorAll(
@@ -31,23 +33,58 @@ function HomeLayout() {
             Fanprojekt zu „Die drei ???“ – alle Alben auf Spotify
           </p>
           <div className="d-flex mt-4 mb-4 gap-3 filters">
-            <Search searchValue={searchValue} setSearchValue={setSearchValue} />
+            {/* Suchzeile nur sichtbar, wenn NICHT im Zufallsmodus */}
+            {!showRandom && (
+              <Search searchValue={searchValue} setSearchValue={setSearchValue} />
+            )}
+
+            {/* Filterbutton */}
             <button
               type="button"
               className={`btn btn-primary ${!filterActive ? "" : "inactive"}`}
               onClick={() => setFilterActive((prev) => !prev)}
               data-bs-toggle="tooltip"
-              data-bs-placement="right"
+              data-bs-placement="bottom"
               data-bs-title="Blendet Folgen mit Überlänge, Playlists und vorgelesene Folgen aus."
             >
               {filterActive
                 ? "Sonderfolgen ausgeblendet"
                 : "Sonderfolgen eingeblendet"}
             </button>
+
+            {/* Zufallsmodus ein/aus */}
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={() => setShowRandom((prev) => !prev)}
+              data-bs-toggle="tooltip"
+              data-bs-placement="bottom"
+            >
+              {showRandom ? "zurück zu allen Folgen" : "Zufallsfolge auswählen"}
+            </button>
+
+            {/* Neuer Zufallsbutton nur sichtbar im Zufallsmodus */}
+            {showRandom && (
+              <button
+                type="button"
+                className="btn btn-outline-secondary"
+                onClick={() => setRefreshRandom((prev) => prev + 1)}
+                data-bs-toggle="tooltip"
+                data-bs-placement="right"
+                data-bs-title="Ziehe eine andere Zufallsfolge."
+              >
+                Neue Zufallsfolge generieren
+              </button>
+            )}
           </div>
         </header>
         <main>
-          <AlbumList searchValue={searchValue} filterActive={filterActive} />
+          <AlbumList
+            searchValue={searchValue}
+            filterActive={filterActive}
+            showRandom={showRandom}
+            refreshRandom={refreshRandom} // Prop weitergeben
+          />
         </main>
       </div>
     </>

@@ -1,12 +1,12 @@
 import React, { useEffect, useState } from "react";
 import { getCookieConsentValue } from "react-cookie-consent";
 
-function AlbumList({ searchValue, filterActive }) {
-  const [token, setToken] = useState("");
+function AlbumList({ searchValue, filterActive, showRandom, refreshRandom }) {
   const [albums, setAlbums] = useState([]);
   const [loading, setLoading] = useState(true);
-  const limit = 50;
+  const [randomAlbum, setRandomAlbum] = useState(null);
 
+  const limit = 50;
   const consent = getCookieConsentValue("rbw-cookie-consent");
 
   async function fetchToken() {
@@ -23,7 +23,6 @@ function AlbumList({ searchValue, filterActive }) {
   async function fetchAlbums(accessToken, x = 0, y = 50) {
     try {
       const artistID = "3meJIgRw7YleJrmbpbJK6S";
-
       const res = await fetch(
         `https://api.spotify.com/v1/artists/${artistID}/albums?limit=${y}&offset=${x}`,
         {
@@ -32,7 +31,6 @@ function AlbumList({ searchValue, filterActive }) {
           },
         }
       );
-
       const data = await res.json();
       return data.items || [];
     } catch (err) {
@@ -42,7 +40,6 @@ function AlbumList({ searchValue, filterActive }) {
   }
 
   useEffect(() => {
-    // Wenn kein Consent: gar nicht laden
     if (!consent) {
       setLoading(false);
       setAlbums([]);
@@ -52,8 +49,6 @@ function AlbumList({ searchValue, filterActive }) {
     async function loadAll() {
       const accessToken = await fetchToken();
       if (!accessToken) return;
-
-      setToken(accessToken);
 
       let allAlbums = [];
       let offset = 0;
@@ -75,6 +70,46 @@ function AlbumList({ searchValue, filterActive }) {
     loadAll();
   }, [consent]);
 
+  // Gefilterte Liste gleich oben berechnen
+  const filtered = albums.filter((album) => {
+    const name = album.name?.toLowerCase() || "";
+    const matchSearch = name.includes((searchValue || "").toLowerCase());
+    if (!filterActive) return matchSearch;
+
+    const exclude =
+      name.includes("liest...") ||
+      name.includes("adventskalender") ||
+      name.includes("sommer-fälle") ||
+      name.includes("outro") ||
+      name.includes("auferstehung") ||
+      name.includes("brainwash") ||
+      name.includes("das verfluchte schloss") ||
+      name.includes("das geheimnis der geisterinsel") ||
+      name.includes("hörspiel") ||
+      name.includes("das dorf der teufel");
+
+    const tooManyTracks = album.total_tracks > 50;
+    return matchSearch && !exclude && !tooManyTracks;
+  });
+
+  function pickRandomAlbum() {
+    if (filtered.length === 0) {
+      setRandomAlbum(null);
+      return;
+    }
+    const randomIndex = Math.floor(Math.random() * filtered.length);
+    setRandomAlbum(filtered[randomIndex]);
+  }
+
+  useEffect(() => {
+    if (showRandom) {
+      pickRandomAlbum();
+    } else {
+      setRandomAlbum(null);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showRandom, refreshRandom]);
+
   if (!consent) {
     return (
       <div className="hinweis-consent alert alert-info mt-4">
@@ -87,7 +122,6 @@ function AlbumList({ searchValue, filterActive }) {
     );
   }
 
-  // Loading-State
   if (loading) {
     return (
       <div className="d-flex justify-content-center align-items-center mb-5">
@@ -98,53 +132,61 @@ function AlbumList({ searchValue, filterActive }) {
     );
   }
 
-  const filtered = albums.filter((album) => {
-    const matchSearch = album.name
-      ?.toLowerCase()
-      .includes(searchValue?.toLowerCase() || "");
-    if (!filterActive) return matchSearch;
-
-    const exclude =
-      album.name?.toLowerCase().includes("liest...") ||
-      album.name?.toLowerCase().includes("adventskalender") ||
-      album.name?.toLowerCase().includes("sommer-fälle") ||
-      album.name?.toLowerCase().includes("outro") ||
-      album.name?.toLowerCase().includes("auferstehung") ||
-      album.name?.toLowerCase().includes("brainwash") ||
-      album.name?.toLowerCase().includes("das verfluchte schloss") ||
-      album.name?.toLowerCase().includes("das geheimnis der geisterinsel") ||
-      album.name?.toLowerCase().includes("hörspiel") ||
-      album.name?.toLowerCase().includes("das dorf der teufel");
-    const tooManyTracks = album.total_tracks > 50;
-    return matchSearch && !exclude && !tooManyTracks;
-  });
-
   return (
     <div className="grid">
-      <ul className="episode-list row row-cols-1 row-cols-sm-2 row-cols-md-3 row-cols-lg-4 row-cols-xl-5 list-unstyled">
-        {filtered.map((album) => (
-          <li key={album.id} className="episode col mb-4">
+      {!showRandom && (
+        <ul className="episode-list row row-cols-1 row-cols-sm-2 row-cols-md-3 row-cols-lg-4 row-cols-xl-5 list-unstyled">
+          {filtered.map((album) => (
+            <li key={album.id} className="episode col mb-4">
+              <div className="card h-100">
+                <a
+                  href={album.external_urls?.spotify}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-decoration-none"
+                >
+                  <img
+                    src={album.images?.[0]?.url}
+                    alt={album.name}
+                    className="card-img-top"
+                  />
+                  <div className="card-body">
+                    <p className="episode-title card-title">{album.name}</p>
+                    <p className="card-text text-muted">{album.release_date}</p>
+                  </div>
+                </a>
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {showRandom && randomAlbum && (
+        <ul className="episode-list row row-cols-1 row-cols-sm-2 row-cols-md-3 row-cols-lg-4 row-cols-xl-5 list-unstyled">
+          <li key={randomAlbum.id} className="episode col mb-4">
             <div className="card h-100">
               <a
-                href={album.external_urls?.spotify}
+                href={randomAlbum.external_urls?.spotify}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="text-decoration-none"
               >
                 <img
-                  src={album.images?.[0]?.url}
-                  alt={album.name}
-                  className="card-img-top"
+                  src={randomAlbum.images?.[0]?.url}
+                  alt={randomAlbum.name}
+                  className="card-img-top border-random"
                 />
                 <div className="card-body">
-                  <p className="episode-title card-title">{album.name}</p>
-                  <p className="card-text text-muted">{album.release_date}</p>
+                  <p className="episode-title card-title">{randomAlbum.name}</p>
+                  <p className="card-text text-muted">
+                    {randomAlbum.release_date}
+                  </p>
                 </div>
               </a>
             </div>
           </li>
-        ))}
-      </ul>
+        </ul>
+      )}
     </div>
   );
 }
