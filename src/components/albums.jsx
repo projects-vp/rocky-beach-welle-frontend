@@ -1,13 +1,16 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import { getCookieConsentValue } from "react-cookie-consent";
 
 function AlbumList({ searchValue, filterActive, showRandom, refreshRandom }) {
   const [albums, setAlbums] = useState([]);
   const [loading, setLoading] = useState(true);
   const [randomAlbum, setRandomAlbum] = useState(null);
+  const [offset, setOffset] = useState(0);
+  const [hasMore, setHasMore] = useState(true);
 
-  const limit = 50;
+  const limit = 20;
   const consent = getCookieConsentValue("rbw-cookie-consent");
+  const observer = useRef();
 
   async function fetchToken() {
     try {
@@ -20,16 +23,12 @@ function AlbumList({ searchValue, filterActive, showRandom, refreshRandom }) {
     }
   }
 
-  async function fetchAlbums(accessToken, x = 0, y = 50) {
+  async function fetchAlbums(accessToken, x = 0, y = 20) {
     try {
       const artistID = "3meJIgRw7YleJrmbpbJK6S";
       const res = await fetch(
         `https://api.spotify.com/v1/artists/${artistID}/albums?limit=${y}&offset=${x}`,
-        {
-          headers: {
-            Authorization: `Bearer ${accessToken}`,
-          },
-        }
+        { headers: { Authorization: `Bearer ${accessToken}` } }
       );
       const data = await res.json();
       return data.items || [];
@@ -39,39 +38,34 @@ function AlbumList({ searchValue, filterActive, showRandom, refreshRandom }) {
     }
   }
 
+  // Lade einen Chunk Alben
+  async function loadAlbumsChunk() {
+    if (!hasMore) return;
+
+    setLoading(true);
+    const accessToken = await fetchToken();
+    if (!accessToken) return;
+
+    const items = await fetchAlbums(accessToken, offset, limit);
+    setAlbums(prev => [...prev, ...items]);
+
+    if (items.length < limit) setHasMore(false);
+    else setOffset(prev => prev + limit);
+
+    setLoading(false);
+  }
+
   useEffect(() => {
     if (!consent) {
       setLoading(false);
       setAlbums([]);
       return;
     }
-
-    async function loadAll() {
-      const accessToken = await fetchToken();
-      if (!accessToken) return;
-
-      let allAlbums = [];
-      let offset = 0;
-      let hasMore = true;
-
-      while (hasMore) {
-        const items = await fetchAlbums(accessToken, offset, limit);
-        allAlbums = [...allAlbums, ...items];
-        if (items.length < limit) {
-          hasMore = false;
-        } else {
-          offset += limit;
-        }
-      }
-      setAlbums(allAlbums);
-      setLoading(false);
-    }
-
-    loadAll();
+    loadAlbumsChunk();
   }, [consent]);
 
-  // Gefilterte Liste gleich oben berechnen
-  const filtered = albums.filter((album) => {
+  // Filter & Suche
+  const filtered = albums.filter(album => {
     const name = album.name?.toLowerCase() || "";
     const matchSearch = name.includes((searchValue || "").toLowerCase());
     if (!filterActive) return matchSearch;
@@ -92,6 +86,7 @@ function AlbumList({ searchValue, filterActive, showRandom, refreshRandom }) {
     return matchSearch && !exclude && !tooManyTracks;
   });
 
+  // Random Album
   function pickRandomAlbum() {
     if (filtered.length === 0) {
       setRandomAlbum(null);
@@ -102,13 +97,48 @@ function AlbumList({ searchValue, filterActive, showRandom, refreshRandom }) {
   }
 
   useEffect(() => {
-    if (showRandom) {
-      pickRandomAlbum();
-    } else {
-      setRandomAlbum(null);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [showRandom, refreshRandom]);
+    if (showRandom) pickRandomAlbum();
+    else setRandomAlbum(null);
+  }, [showRandom, refreshRandom, filtered]);
+
+  // Infinite Scroll
+  useEffect(() => {
+    if (!hasMore) return;
+    const handleScroll = () => {
+      if (
+        window.innerHeight + window.scrollY >= document.body.offsetHeight - 500 &&
+        !loading
+      ) {
+        loadAlbumsChunk();
+      }
+    };
+    window.addEventListener("scroll", handleScroll);
+    return () => window.removeEventListener("scroll", handleScroll);
+  }, [loading, hasMore, offset]);
+
+  // IntersectionObserver für Bilder
+  const imgRefs = useRef([]);
+  useEffect(() => {
+    if (!imgRefs.current) return;
+    const io = new IntersectionObserver(
+      entries => {
+        entries.forEach(entry => {
+          if (entry.isIntersecting) {
+            const img = entry.target;
+            img.src = img.dataset.src; // echtes Lazy-Loading
+            io.unobserve(img);
+          }
+        });
+      },
+      { rootMargin: "100px" }
+    );
+
+    imgRefs.current.forEach(img => {
+      if (img) io.observe(img);
+    });
+
+    return () => io.disconnect();
+  }, [albums, filtered, showRandom, randomAlbum]);
 
   if (!consent) {
     return (
@@ -122,70 +152,51 @@ function AlbumList({ searchValue, filterActive, showRandom, refreshRandom }) {
     );
   }
 
-  if (loading) {
-    return (
-      <div className="d-flex justify-content-center align-items-center mb-5">
-        <div className="spinner-border text-light" role="status">
-          <span className="visually-hidden">Lade Folgen...</span>
-        </div>
+  const renderAlbumCard = (album, index) => (
+    <li key={album.id} className="episode col mb-4">
+      <div className="card h-100">
+        <a
+          href={album.external_urls?.spotify}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-decoration-none"
+        >
+          <img
+            data-src={album.images?.[0]?.url}
+            alt={album.name}
+            className="card-img-top"
+            ref={el => (imgRefs.current[index] = el)}
+            src="" // leeres Placeholder src
+          />
+          <div className="card-body">
+            <p className="episode-title card-title">{album.name}</p>
+            <p className="card-text text-muted">{album.release_date}</p>
+          </div>
+        </a>
       </div>
-    );
-  }
+    </li>
+  );
 
   return (
     <div className="grid">
       {!showRandom && (
         <ul className="episode-list row row-cols-1 row-cols-sm-2 row-cols-md-3 row-cols-lg-4 row-cols-xl-5 list-unstyled">
-          {filtered.map((album) => (
-            <li key={album.id} className="episode col mb-4">
-              <div className="card h-100">
-                <a
-                  href={album.external_urls?.spotify}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-decoration-none"
-                >
-                  <img
-                    src={album.images?.[0]?.url}
-                    alt={album.name}
-                    className="card-img-top"
-                  />
-                  <div className="card-body">
-                    <p className="episode-title card-title">{album.name}</p>
-                    <p className="card-text text-muted">{album.release_date}</p>
-                  </div>
-                </a>
-              </div>
-            </li>
-          ))}
+          {filtered.map((album, idx) => renderAlbumCard(album, idx))}
         </ul>
       )}
 
       {showRandom && randomAlbum && (
         <ul className="episode-list row row-cols-1 row-cols-sm-2 row-cols-md-3 row-cols-lg-4 row-cols-xl-5 list-unstyled">
-          <li key={randomAlbum.id} className="episode col mb-4">
-            <div className="card h-100">
-              <a
-                href={randomAlbum.external_urls?.spotify}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-decoration-none"
-              >
-                <img
-                  src={randomAlbum.images?.[0]?.url}
-                  alt={randomAlbum.name}
-                  className="card-img-top border-random"
-                />
-                <div className="card-body">
-                  <p className="episode-title card-title">{randomAlbum.name}</p>
-                  <p className="card-text text-muted">
-                    {randomAlbum.release_date}
-                  </p>
-                </div>
-              </a>
-            </div>
-          </li>
+          {renderAlbumCard(randomAlbum, 0)}
         </ul>
+      )}
+
+      {loading && (
+        <div className="d-flex justify-content-center align-items-center my-4">
+          <div className="spinner-border text-light" role="status">
+            <span className="visually-hidden">Lade Alben...</span>
+          </div>
+        </div>
       )}
     </div>
   );
