@@ -2,16 +2,16 @@ import React, { useEffect, useState, useRef } from "react";
 import { getCookieConsentValue } from "react-cookie-consent";
 
 function AlbumList({ searchValue, filterActive, showRandom, refreshRandom }) {
-  const [albums, setAlbums] = useState([]);
+  const [albums, setAlbums] = useState([]); // alle Metadaten
+  const [displayedAlbums, setDisplayedAlbums] = useState([]); // nur gerenderte Alben
   const [loading, setLoading] = useState(true);
   const [randomAlbum, setRandomAlbum] = useState(null);
-  const [offset, setOffset] = useState(0);
-  const [hasMore, setHasMore] = useState(true);
 
-  const limit = 20;
   const consent = getCookieConsentValue("rbw-cookie-consent");
-  const observer = useRef();
+  const imgRefs = useRef([]);
+  const chunkSize = 20; // wie viele Bilder auf einmal gerendert werden
 
+  // --- Spotify API ---
   async function fetchToken() {
     try {
       const res = await fetch(`${process.env.REACT_APP_API_URL}/refresh_token`);
@@ -23,11 +23,11 @@ function AlbumList({ searchValue, filterActive, showRandom, refreshRandom }) {
     }
   }
 
-  async function fetchAlbums(accessToken, x = 0, y = 20) {
+  async function fetchAlbums(accessToken, offset = 0, limit = 50) {
     try {
       const artistID = "3meJIgRw7YleJrmbpbJK6S";
       const res = await fetch(
-        `https://api.spotify.com/v1/artists/${artistID}/albums?limit=${y}&offset=${x}`,
+        `https://api.spotify.com/v1/artists/${artistID}/albums?limit=${limit}&offset=${offset}`,
         { headers: { Authorization: `Bearer ${accessToken}` } }
       );
       const data = await res.json();
@@ -38,33 +38,40 @@ function AlbumList({ searchValue, filterActive, showRandom, refreshRandom }) {
     }
   }
 
-  // Lade einen Chunk Alben
-  async function loadAlbumsChunk() {
-    if (!hasMore) return;
-
-    setLoading(true);
-    const accessToken = await fetchToken();
-    if (!accessToken) return;
-
-    const items = await fetchAlbums(accessToken, offset, limit);
-    setAlbums(prev => [...prev, ...items]);
-
-    if (items.length < limit) setHasMore(false);
-    else setOffset(prev => prev + limit);
-
-    setLoading(false);
-  }
-
+  // --- Alle Metadaten laden ---
   useEffect(() => {
     if (!consent) {
       setLoading(false);
       setAlbums([]);
       return;
     }
-    loadAlbumsChunk();
+
+    async function loadAllAlbums() {
+      setLoading(true);
+      const accessToken = await fetchToken();
+      if (!accessToken) return;
+
+      let allAlbums = [];
+      let offset = 0;
+      let hasMore = true;
+
+      while (hasMore) {
+        const items = await fetchAlbums(accessToken, offset, 50);
+        allAlbums = [...allAlbums, ...items];
+        if (items.length < 50) hasMore = false;
+        else offset += 50;
+      }
+
+      setAlbums(allAlbums);
+      // Initial nur die ersten chunkSize Alben rendern
+      setDisplayedAlbums(allAlbums.slice(0, chunkSize));
+      setLoading(false);
+    }
+
+    loadAllAlbums();
   }, [consent]);
 
-  // Filter & Suche
+  // --- Filter & Suche ---
   const filtered = albums.filter(album => {
     const name = album.name?.toLowerCase() || "";
     const matchSearch = name.includes((searchValue || "").toLowerCase());
@@ -86,7 +93,7 @@ function AlbumList({ searchValue, filterActive, showRandom, refreshRandom }) {
     return matchSearch && !exclude && !tooManyTracks;
   });
 
-  // Random Album
+  // --- Random Album ---
   function pickRandomAlbum() {
     if (filtered.length === 0) {
       setRandomAlbum(null);
@@ -101,23 +108,7 @@ function AlbumList({ searchValue, filterActive, showRandom, refreshRandom }) {
     else setRandomAlbum(null);
   }, [showRandom, refreshRandom, filtered]);
 
-  // Infinite Scroll
-  useEffect(() => {
-    if (!hasMore) return;
-    const handleScroll = () => {
-      if (
-        window.innerHeight + window.scrollY >= document.body.offsetHeight - 500 &&
-        !loading
-      ) {
-        loadAlbumsChunk();
-      }
-    };
-    window.addEventListener("scroll", handleScroll);
-    return () => window.removeEventListener("scroll", handleScroll);
-  }, [loading, hasMore, offset]);
-
-  // IntersectionObserver für Bilder
-  const imgRefs = useRef([]);
+  // --- Lazy Loading der Bilder per IntersectionObserver ---
   useEffect(() => {
     if (!imgRefs.current) return;
     const io = new IntersectionObserver(
@@ -125,7 +116,7 @@ function AlbumList({ searchValue, filterActive, showRandom, refreshRandom }) {
         entries.forEach(entry => {
           if (entry.isIntersecting) {
             const img = entry.target;
-            img.src = img.dataset.src; // echtes Lazy-Loading
+            img.src = img.dataset.src;
             io.unobserve(img);
           }
         });
@@ -138,20 +129,28 @@ function AlbumList({ searchValue, filterActive, showRandom, refreshRandom }) {
     });
 
     return () => io.disconnect();
-  }, [albums, filtered, showRandom, randomAlbum]);
+  }, [displayedAlbums, randomAlbum]);
 
-  if (!consent) {
-    return (
-      <div className="hinweis-consent alert alert-info mt-4">
-        <p>
-          Um die Spotify-Alben der Drei ??? anzuzeigen, benötige ich deine
-          Einwilligung zur Nutzung von Spotify (Cookies und Datenübertragung).
-        </p>
-        <p>Bitte triff unten im Cookie-Hinweis deine Auswahl.</p>
-      </div>
-    );
-  }
+  // --- Infinite Scroll nur für gerenderte Bilder ---
+  useEffect(() => {
+    const handleScroll = () => {
+      if (
+        window.innerHeight + window.scrollY >= document.body.offsetHeight - 500 &&
+        displayedAlbums.length < filtered.length
+      ) {
+        const nextChunk = filtered.slice(
+          displayedAlbums.length,
+          displayedAlbums.length + chunkSize
+        );
+        setDisplayedAlbums(prev => [...prev, ...nextChunk]);
+      }
+    };
 
+    window.addEventListener("scroll", handleScroll);
+    return () => window.removeEventListener("scroll", handleScroll);
+  }, [displayedAlbums, filtered]);
+
+  // --- Render Album Card ---
   const renderAlbumCard = (album, index) => (
     <li key={album.id} className="episode col mb-4">
       <div className="card h-100">
@@ -166,7 +165,7 @@ function AlbumList({ searchValue, filterActive, showRandom, refreshRandom }) {
             alt={album.name}
             className="card-img-top"
             ref={el => (imgRefs.current[index] = el)}
-            src="" // leeres Placeholder src
+            src=""
           />
           <div className="card-body">
             <p className="episode-title card-title">{album.name}</p>
@@ -177,11 +176,23 @@ function AlbumList({ searchValue, filterActive, showRandom, refreshRandom }) {
     </li>
   );
 
+  if (!consent) {
+    return (
+      <div className="hinweis-consent alert alert-info mt-4">
+        <p>
+          Um die Spotify-Alben der Drei ??? anzuzeigen, benötige ich deine
+          Einwilligung zur Nutzung von Spotify (Cookies und Datenübertragung).
+        </p>
+        <p>Bitte triff unten im Cookie-Hinweis deine Auswahl.</p>
+      </div>
+    );
+  }
+
   return (
     <div className="grid">
       {!showRandom && (
         <ul className="episode-list row row-cols-1 row-cols-sm-2 row-cols-md-3 row-cols-lg-4 row-cols-xl-5 list-unstyled">
-          {filtered.map((album, idx) => renderAlbumCard(album, idx))}
+          {displayedAlbums.map((album, idx) => renderAlbumCard(album, idx))}
         </ul>
       )}
 
