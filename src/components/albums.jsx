@@ -9,7 +9,7 @@ function AlbumList({ searchValue, filterActive, showRandom, refreshRandom }) {
 
   const consent = getCookieConsentValue("rbw-cookie-consent");
   const imgRefs = useRef([]);
-  const chunkSize = 20; // wie viele Bilder auf einmal gerendert werden
+  const chunkSize = 20; // wie viele Alben pro Scroll geladen werden
 
   // --- Spotify API ---
   async function fetchToken() {
@@ -63,52 +63,59 @@ function AlbumList({ searchValue, filterActive, showRandom, refreshRandom }) {
       }
 
       setAlbums(allAlbums);
-      // Initial nur die ersten chunkSize Alben rendern
-      setDisplayedAlbums(allAlbums.slice(0, chunkSize));
       setLoading(false);
     }
 
     loadAllAlbums();
   }, [consent]);
 
-  // --- Filter & Suche ---
-  const filtered = albums.filter(album => {
-    const name = album.name?.toLowerCase() || "";
-    const matchSearch = name.includes((searchValue || "").toLowerCase());
-    if (!filterActive) return matchSearch;
+  // --- Filter & Suche über alle Alben ---
+  const getFilteredAlbums = () => {
+    return albums.filter(album => {
+      const name = album.name?.toLowerCase() || "";
+      const matchSearch = name.includes((searchValue || "").toLowerCase());
+      if (!filterActive) return matchSearch;
 
-    const exclude =
-      name.includes("liest...") ||
-      name.includes("adventskalender") ||
-      name.includes("sommer-fälle") ||
-      name.includes("outro") ||
-      name.includes("auferstehung") ||
-      name.includes("brainwash") ||
-      name.includes("das verfluchte schloss") ||
-      name.includes("das geheimnis der geisterinsel") ||
-      name.includes("hörspiel") ||
-      name.includes("das dorf der teufel");
+      const exclude =
+        name.includes("liest...") ||
+        name.includes("adventskalender") ||
+        name.includes("sommer-fälle") ||
+        name.includes("outro") ||
+        name.includes("auferstehung") ||
+        name.includes("brainwash") ||
+        name.includes("das verfluchte schloss") ||
+        name.includes("das geheimnis der geisterinsel") ||
+        name.includes("hörspiel") ||
+        name.includes("das dorf der teufel");
 
-    const tooManyTracks = album.total_tracks > 50;
-    return matchSearch && !exclude && !tooManyTracks;
-  });
+      const tooManyTracks = album.total_tracks > 50;
+      return matchSearch && !exclude && !tooManyTracks;
+    });
+  };
+
+  // --- Aktualisiere displayedAlbums bei Suche/Filter ---
+  useEffect(() => {
+    const filteredAlbums = getFilteredAlbums();
+    setDisplayedAlbums(filteredAlbums.slice(0, chunkSize));
+  }, [searchValue, filterActive, albums]);
 
   // --- Random Album ---
   function pickRandomAlbum() {
-    if (filtered.length === 0) {
+    const filteredAlbums = getFilteredAlbums();
+    if (filteredAlbums.length === 0) {
       setRandomAlbum(null);
       return;
     }
-    const randomIndex = Math.floor(Math.random() * filtered.length);
-    setRandomAlbum(filtered[randomIndex]);
+    const randomIndex = Math.floor(Math.random() * filteredAlbums.length);
+    setRandomAlbum(filteredAlbums[randomIndex]);
   }
 
   useEffect(() => {
     if (showRandom) pickRandomAlbum();
     else setRandomAlbum(null);
-  }, [showRandom, refreshRandom, filtered]);
+  }, [showRandom, refreshRandom, albums, searchValue, filterActive]);
 
-  // --- Lazy Loading der Bilder per IntersectionObserver ---
+  // --- Lazy Loading der Bilder ---
   useEffect(() => {
     if (!imgRefs.current) return;
     const io = new IntersectionObserver(
@@ -131,14 +138,15 @@ function AlbumList({ searchValue, filterActive, showRandom, refreshRandom }) {
     return () => io.disconnect();
   }, [displayedAlbums, randomAlbum]);
 
-  // --- Infinite Scroll nur für gerenderte Bilder ---
+  // --- Scroll lädt weitere Treffer aus gefilterten Alben ---
   useEffect(() => {
     const handleScroll = () => {
+      const filteredAlbums = getFilteredAlbums();
       if (
         window.innerHeight + window.scrollY >= document.body.offsetHeight - 500 &&
-        displayedAlbums.length < filtered.length
+        displayedAlbums.length < filteredAlbums.length
       ) {
-        const nextChunk = filtered.slice(
+        const nextChunk = filteredAlbums.slice(
           displayedAlbums.length,
           displayedAlbums.length + chunkSize
         );
@@ -148,7 +156,7 @@ function AlbumList({ searchValue, filterActive, showRandom, refreshRandom }) {
 
     window.addEventListener("scroll", handleScroll);
     return () => window.removeEventListener("scroll", handleScroll);
-  }, [displayedAlbums, filtered]);
+  }, [displayedAlbums, albums, searchValue, filterActive]);
 
   // --- Render Album Card ---
   const renderAlbumCard = (album, index) => (
